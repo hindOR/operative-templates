@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Operative Templates</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:0; background:#fafafa; color:#111}
+    header{position:sticky;top:0;background:white;border-bottom:1px solid #eee;padding:16px 20px;display:flex;gap:12px;align-items:center;justify-content:space-between}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px 20px}
+    .grid{display:grid;grid-template-columns:340px 1fr;gap:16px}
+    .card{background:white;border:1px solid #eee;border-radius:16px;padding:14px}
+    .btn{border:1px solid #ddd;background:#111;color:#fff;border-radius:12px;padding:10px 12px;cursor:pointer}
+    .btn.secondary{background:white;color:#111}
+    .btn.danger{background:#c1121f;border-color:#c1121f}
+    input,textarea{width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:12px;padding:10px;font:inherit}
+    textarea{min-height:120px;resize:vertical}
+    .list button{width:100%;text-align:left;border:1px solid #eee;background:#fff;border-radius:14px;padding:10px;cursor:pointer}
+    .list button.active{border-color:#111;background:#f3f3f3}
+    .muted{color:#666;font-size:13px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .tag{display:inline-block;font-size:12px;border:1px solid #ddd;border-radius:999px;padding:2px 8px;margin-right:6px;margin-top:6px}
+    @media print{
+      header, .no-print{display:none !important}
+      body{background:#fff}
+      .wrap{max-width:none}
+      .card{border:0}
+      pre{white-space:pre-wrap}
+    }
+  </style>
+</head>
+<body>
+<header class="no-print">
+  <div>
+    <div style="font-weight:800;font-size:18px">Operative Templates</div>
+    <div class="muted">Simple + printable. Saved on this browser for now.</div>
+  </div>
+  <div class="row">
+    <button class="btn secondary" id="exportBtn">Export JSON</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none"/>
+    <button class="btn secondary" id="importBtn">Import JSON</button>
+    <button class="btn" id="newBtn">New</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card">
+      <input id="search" placeholder="Search procedures…" />
+      <div style="height:12px"></div>
+      <div class="list" id="list"></div>
+      <div style="height:12px"></div>
+      <div class="muted">Tip: Print/PDF prints full text.</div>
+    </div>
+
+    <div class="card" id="detail"></div>
+  </div>
+</div>
+
+<script>
+  const KEY="op_templates_v1";
+  const $=sel=>document.querySelector(sel);
+  const el=(tag,attrs={})=>Object.assign(document.createElement(tag),attrs);
+
+  function load(){ try{return JSON.parse(localStorage.getItem(KEY)||"[]")}catch{return []} }
+  function save(arr){ localStorage.setItem(KEY, JSON.stringify(arr)); }
+
+  let templates=load();
+  let selectedId=templates[0]?.id||null;
+
+  function uuid(){ return (crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now()) }
+
+  function renderList(){
+    const q=$("#search").value.trim().toLowerCase();
+    const list=$("#list"); list.innerHTML="";
+    const filtered=!q?templates:templates.filter(t=>{
+      const hay=[t.name,t.tags,t.operativeDetails,t.instrumentsText,t.suturesText,t.devicesText,t.preOpOrdersText,t.postOpOrdersText].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+    if(!filtered.length){ list.appendChild(el("div",{className:"muted",textContent:"No templates."})); return; }
+    filtered.forEach(t=>{
+      const b=el("button",{onclick:()=>{selectedId=t.id; render();}});
+      b.className = (t.id===selectedId) ? "active" : "";
+      b.innerHTML = "<div style='font-weight:700'>" + escapeHtml(t.name) + "</div>"
+        + "<div class='muted'>" + escapeHtml((t.tags||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,3).join(" • ")) + "</div>";
+      list.appendChild(b);
+      list.appendChild(el("div",{style:"height:8px"}));
+    });
+  }
+
+  function renderDetail(){
+    const d=$("#detail");
+    const t=templates.find(x=>x.id===selectedId) || null;
+    if(!t){
+      d.innerHTML = "<div class='muted'>Select a template</div>";
+      return;
+    }
+    d.innerHTML = `
+      <div class="row no-print" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-weight:900;font-size:22px">${escapeHtml(t.name)}</div>
+          <div>${(t.tags||"").split(",").map(x=>x.trim()).filter(Boolean).map(x=>`<span class="tag">${escapeHtml(x)}</span>`).join("")}</div>
+        </div>
+        <div class="row">
+          <button class="btn secondary" id="editBtn">Edit</button>
+          <button class="btn secondary" id="printBtn">Print/PDF</button>
+          <button class="btn danger" id="delBtn">Delete</button>
+        </div>
+      </div>
+      <div style="height:12px"></div>
+
+      ${block("Operative details", t.operativeDetails)}
+      <div style="height:12px"></div>
+      <div class="row" style="gap:12px">
+        <div style="flex:1">${block("Instruments needed", t.instrumentsText)}</div>
+        <div style="flex:1">${block("Sutures needed", t.suturesText)}</div>
+        <div style="flex:1">${block("Medical devices", t.devicesText)}</div>
+      </div>
+      <div style="height:12px"></div>
+      <div class="row" style="gap:12px">
+        <div style="flex:1">${block("Preoperative orders", t.preOpOrdersText)}</div>
+        <div style="flex:1">${block("Postoperative orders", t.postOpOrdersText)}</div>
+      </div>
+    `;
+
+    $("#printBtn").onclick=()=>window.print();
+    $("#delBtn").onclick=()=>{
+      if(confirm("Delete this template?")){
+        templates=templates.filter(x=>x.id!==t.id);
+        selectedId=templates[0]?.id||null;
+        save(templates); render();
+      }
+    }
+    $("#editBtn").onclick=()=>openForm(t);
+  }
+
+  function block(title, text){
+    return `
+      <div class="card" style="border-radius:16px">
+        <div style="font-weight:800;margin-bottom:8px">${escapeHtml(title)}</div>
+        <pre style="margin:0;white-space:pre-wrap;line-height:1.6">${escapeHtml(text||"—")}</pre>
+      </div>
+    `;
+  }
+
+  function openForm(t){
+    const isNew=!t;
+    const cur = t || {
+      id: uuid(),
+      name:"",
+      tags:"",
+      operativeDetails:"",
+      instrumentsText:"",
+      suturesText:"",
+      devicesText:"",
+      preOpOrdersText:"Preoperative orders:\n",
+      postOpOrdersText:"Postoperative orders:\n"
+    };
+
+    $("#detail").innerHTML = `
+      <div class="no-print">
+        <div style="font-weight:900;font-size:20px">${isNew?"New":"Edit"} template</div>
+        <div style="height:10px"></div>
+
+        <label class="muted">Procedure name</label>
+        <input id="f_name" value="${escapeAttr(cur.name)}" placeholder="e.g., Simple Mastectomy"/>
+
+        <div style="height:10px"></div>
+        <label class="muted">Tags (comma separated)</label>
+        <input id="f_tags" value="${escapeAttr(cur.tags)}" placeholder="Breast, GS"/>
+
+        <div style="height:10px"></div>
+        <label class="muted">Operative details</label>
+        <textarea id="f_od" placeholder="Steps…">${escapeHtml(cur.operativeDetails)}</textarea>
+
+        <div style="height:10px"></div>
+        <div class="row" style="gap:12px">
+          <div style="flex:1">
+            <label class="muted">Instruments needed</label>
+            <textarea id="f_inst">${escapeHtml(cur.instrumentsText)}</textarea>
+          </div>
+          <div style="flex:1">
+            <label class="muted">Sutures needed</label>
+            <textarea id="f_sut">${escapeHtml(cur.suturesText)}</textarea>
+          </div>
+          <div style="flex:1">
+            <label class="muted">Medical devices</label>
+            <textarea id="f_dev">${escapeHtml(cur.devicesText)}</textarea>
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="row" style="gap:12px">
+          <div style="flex:1">
+            <label class="muted">Preoperative orders</label>
+            <textarea id="f_pre">${escapeHtml(cur.preOpOrdersText)}</textarea>
+          </div>
+          <div style="flex:1">
+            <label class="muted">Postoperative orders</label>
+            <textarea id="f_post">${escapeHtml(cur.postOpOrdersText)}</textarea>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="row">
+          <button class="btn secondary" id="cancelBtn">Cancel</button>
+          <button class="btn" id="saveBtn">Save</button>
+        </div>
+      </div>
+    `;
+
+    $("#cancelBtn").onclick=()=>render();
+    $("#saveBtn").onclick=()=>{
+      const next={
+        id:cur.id,
+        name:$("#f_name").value.trim(),
+        tags:$("#f_tags").value.trim(),
+        operativeDetails:$("#f_od").value,
+        instrumentsText:$("#f_inst").value,
+        suturesText:$("#f_sut").value,
+        devicesText:$("#f_dev").value,
+        preOpOrdersText:$("#f_pre").value,
+        postOpOrdersText:$("#f_post").value,
+      };
+      if(!next.name){ alert("Procedure name required"); return; }
+      const idx=templates.findIndex(x=>x.id===next.id);
+      if(idx>=0) templates[idx]=next; else templates.unshift(next);
+      selectedId=next.id;
+      save(templates); render();
+    }
+  }
+
+  function exportJson(){
+    const blob=new Blob([JSON.stringify(templates,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=el("a",{href:url,download:"operative-templates.json"}); a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importJson(file){
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const arr=JSON.parse(String(r.result||"[]"));
+        if(!Array.isArray(arr)) throw 0;
+        templates=arr.map(x=>({
+          id: x.id||uuid(),
+          name: x.name||"",
+          tags: x.tags||"",
+          operativeDetails: x.operativeDetails||"",
+          instrumentsText: x.instrumentsText||"",
+          suturesText: x.suturesText||"",
+          devicesText: x.devicesText||"",
+          preOpOrdersText: x.preOpOrdersText||"",
+          postOpOrdersText: x.postOpOrdersText||"",
+        })).filter(x=>x.name);
+        save(templates);
+        selectedId=templates[0]?.id||null;
+        render();
+      }catch{ alert("Invalid JSON file"); }
+    }
+    r.readAsText(file);
+  }
+
+  function escapeHtml(s){ return (s??"").toString().replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])) }
+  function escapeAttr(s){ return escapeHtml(s).replace(/"/g,"&quot;") }
+
+  function render(){ renderList(); renderDetail(); }
+
+  $("#search").addEventListener("input",renderList);
+  $("#newBtn").onclick=()=>openForm(null);
+  $("#exportBtn").onclick=exportJson;
+  $("#importBtn").onclick=()=>$("#importFile").click();
+  $("#importFile").onchange=(e)=>{ const f=e.target.files[0]; if(f) importJson(f); e.target.value=""; };
+
+  if(!templates.length){
+    // start with one blank template so you see the UI immediately
+    templates=[{
+      id:uuid(),
+      name:"Example: Laparoscopic Appendectomy",
+      tags:"GS, Emergency",
+      operativeDetails:"Indication:\nPosition:\nPorts:\nSteps:\nClosure:",
+      instrumentsText:"- Laparoscopic set\n- Grasper\n- Energy device",
+      suturesText:"- 0 Vicryl\n- 4/0 Monocryl",
+      devicesText:"- Endobag\n- LigaSure/Harmonic",
+      preOpOrdersText:"Preoperative orders:\n- Consent\n- Antibiotics\n- IVF\n- DVT prophylaxis if indicated",
+      postOpOrdersText:"Postoperative orders:\n- Analgesia\n- Diet as tolerated\n- Mobilize\n- Discharge when stable",
+    }];
+    save(templates);
+    selectedId=templates[0].id;
+  }
+
+  render();
+</script>
+</body>
+</html>
